@@ -35,7 +35,7 @@ int main ()
 		ClearBackground(BLACK);
 
 		// draw some text using the default font
-		DrawText("Hello 2D platformer", 200,200,20,WHITE);
+		DrawText("Hello 2D", 100,200,20,WHITE);
 
 		// draw our texture to the screen
 		DrawTexture(wabbit, 400, 200, WHITE);
