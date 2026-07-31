@@ -38,6 +38,8 @@ bool isGrounded;
 bool collected = false;
 bool isntcollected = true;
 
+bool win = false;
+
 
 // Body structure to hold player data
 typedef struct {
@@ -202,13 +204,20 @@ int main ()
 	Body groundBody2;
 	InitBody(&groundBody2, (Vector2) { 1500.f, 400.f }, (Vector2) { 500.f, 400.f }, 0.f);
 
+	Body groundBody3;
+	InitBody(&groundBody3, (Vector2) { 2500.f, 400.f }, (Vector2) { 3000.f, 400.f }, 0.f);
+
 
 	Body platformBody;
 	InitBody(&platformBody, (Vector2) { 200.0f, 300.0f }, (Vector2) { 150.0f, 20.0f }, 0.0f);
 
-
 	Body VoidBody;
 	InitBody(&VoidBody, (Vector2) { 0.f, 700.f }, (Vector2) { 5000.f, 100.f }, 0.f);
+
+	Body WinBody;
+	InitBody(&WinBody, (Vector2) { 4950.f, 300.f }, (Vector2) { 50.f, 100.f }, 0.f);
+	
+
 
 	//intialise collectable body
 	Body collectableBody;
@@ -230,7 +239,7 @@ int main ()
 
 		camera.target = (Vector2){ box.position.x, box.position.y-20 };
 
-		//printf("%f\n", box.position.x);
+		printf("%f\n", box.position.x);
 
 		//Player Movement
 		if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) {
@@ -284,10 +293,23 @@ int main ()
 
 		}
 
+		if (TestAABB(box, groundBody3))
+		{
+			ResolveCollision(&box, groundBody3);
+			isGrounded = true;
+
+		}
+
 		if (TestAABB(box, platformBody))
 		{
 			ResolveCollision(&box, platformBody);
 			isGrounded = true;
+		}
+
+		if (TestAABB(box, WinBody))
+		{
+			win = true;
+			
 		}
 
 		if (TestAABB(box, VoidBody))
@@ -353,12 +375,14 @@ int main ()
 
 		DrawRectangleV(groundBody.position, groundBody.size, DARKGREEN);
 		DrawRectangleV(groundBody2.position, groundBody2.size, DARKGREEN);
+		DrawRectangleV(groundBody3.position, groundBody3.size, DARKGREEN);
 		DrawRectangleV(VoidBody.position, VoidBody.size, ORANGE);
 
-
-
-
 		DrawRectangleV(platformBody.position, platformBody.size, DARKBROWN);
+
+		DrawRectangleV(WinBody.position, WinBody.size, GOLD);
+
+		
 
 
 
@@ -372,13 +396,31 @@ int main ()
 		DrawRectangleV(collectableBody.position, collectableBody.size, GOLD);
 		}
 
+		if (win)
+		{
+			DrawRectangle(box.position.x- 500, box.position.y-400, 1500, 1000, BLUE);
+			DrawText("YOU WON!", box.position.x-50, box.position.y-50, 30, RED);
+			box.accel = 0.f;
+			JUMP_IMPLUSE = 0.f;
+			
+			
+			
+		}
+		
+		if  (!win)
+		{
+			DrawText(TextFormat("Score: %d", score), (int)(box.position.x), (int)(box.position.y - 20), 10.f, BLACK);
+			DrawText(TextFormat("Deaths: %d", deaths), (int)(box.position.x), (int)(box.position.y - 30), 10.f, BLACK);
+		}
+
+
+
 		EndMode2D;
 
 
 
 		//score text
-		DrawText(TextFormat("Score: %d", score), (int)(box.position.x), (int)(box.position.y - 20), 10.f, BLACK);
-		DrawText(TextFormat("Deaths: %d", deaths), (int)(box.position.x), (int)(box.position.y - 30), 10.f, BLACK);
+		
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
 		EndDrawing();
