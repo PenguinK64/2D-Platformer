@@ -34,13 +34,15 @@ int deaths = 0.0f;
 
 
 bool needsRespawn = false;
+bool win = false;
+bool blueUnlocked = false;
+bool pinkUnlocked = false;
+
 
 //Ground and Collectable
-bool isGrounded;
-bool collected = false;
-bool isntcollected = true;
 
-bool win = false;
+
+
 
 
 // Body structure to hold player data
@@ -70,18 +72,45 @@ typedef struct {
 }Body;
 
 //const int MAX_BODIES = 16;	// new way to define constant but not working in visual studio
-#define MAX_BODIES 16	// old way to define constant
+#define MAX_BODIES 40	// old way to define constant
 Body bodies[MAX_BODIES];
 
 Body* playerBox;
-Body* pushBox;
-Body* groundBody1;
-Body* groundBody2;
-Body* groundBody3;
+Body* pushBoxBlue;
+Body* plateBlueBody;
+Body* pushBoxPink;
+Body* platePinkBody;
+Body* maingroundBody;
+
 Body* platformBody1;
+Body* platformBody2;
+Body* platformBody3;
+Body* platformBody4;
+Body* platformBody5;
+Body* platformBody6;
+Body* collectableBody;
+
+Body* platformBody7;
+Body* platformBody8;
+
+
+Body* dividingwallBody1;
+Body* dividingwallBody2;
+
+Body* doorBlueBody;
+Body* doorPinkBody;
+
 Body* voidBody;
 Body* winBody;
-Body* collectableBody;
+
+
+
+
+
+
+
+
+
 
 typedef enum GameState {
 	GAME_START,
@@ -365,12 +394,23 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 							{
 								score += 1;
 								
-								bodies[9].isAlive = false;
+								bodies[12].isAlive = false;
 
 							}
 
 
 						}
+						if (TestAABB(pushBoxBlue, plateBlueBody))
+						{
+
+
+							bodies[17].isAlive = false;
+						}
+						else
+						{
+							bodies[17].isAlive = true;
+						}
+						
 
 						// Do a quick isGrounded check to see if the body is on top of another body
 						// if one of the bodies is a static body (invMass == 0.0f) and the other is a dynamic body (invMass > 0.0f)
@@ -467,7 +507,7 @@ void ResetBox(Body* box, Vector2 position)
 void GameStateMachine(float dt) {
 
 	// If any of the boxes fall below the screen, reset their position to the top of the screen
-	Vector2 resetPushBoxPosition = (Vector2){ 300.f, 300.f };
+	Vector2 resetpushBoxBluePosition = (Vector2){ 850, 0.f};
 	Vector2 resetPlayerBoxPosition = (Vector2){ 100.f, 300.f };
 
 	switch (g_currentGameState) {
@@ -476,7 +516,7 @@ void GameStateMachine(float dt) {
 		if (IsKeyPressed(KEY_ENTER)) {
 			g_currentGameState = GAME_RUNNING;
 			ResetBox(playerBox, resetPlayerBoxPosition);
-			ResetBox(pushBox, resetPushBoxPosition);
+			ResetBox(pushBoxBlue, resetpushBoxBluePosition);
 		}
 
 		// reset points
@@ -504,7 +544,7 @@ void GameStateMachine(float dt) {
 	case GAME_WIN:
 		ACCELERATION = 0;
 		ResetBox(playerBox, resetPlayerBoxPosition);
-		ResetBox(pushBox, resetPushBoxPosition);
+		ResetBox(pushBoxBlue, resetpushBoxBluePosition);
 		if (IsKeyPressed(KEY_ENTER)) {
 			score = 0;
 			deaths = 0;
@@ -513,7 +553,7 @@ void GameStateMachine(float dt) {
 		break;
 	case GAME_LOSE:
 		ResetBox(playerBox, resetPlayerBoxPosition);
-		ResetBox(pushBox, resetPushBoxPosition);
+		ResetBox(pushBoxBlue, resetpushBoxBluePosition);
 		if (IsKeyPressed(KEY_ENTER)) {
 			score = 0;
 			deaths = 0;
@@ -528,57 +568,78 @@ void GameStateMachine(float dt) {
 void InitialiseGame() {
 	// Get a pointer reference to an array objects in the scene
 	playerBox = &bodies[0];
-	pushBox = &bodies[1];
-	groundBody1 = &bodies[2];
-	groundBody2 = &bodies[3];
-	groundBody3 = &bodies[4];
-	platformBody1 = &bodies[5];
-	voidBody = &bodies[6];
-	winBody = &bodies[7];
-	collectableBody = &bodies[9];
+	 pushBoxBlue = &bodies[1];
+	 pushBoxPink = &bodies[2];
 
-	// Initialise the ground bodies with a gap in the middle  
-	//float gap = 55.0f;
-	//float groundPieceWidth = ((float)window - gap) / 2.0f;
+	 maingroundBody = &bodies[3];
+	 plateBlueBody = &bodies[4];
+	 platePinkBody = &bodies[5];
 
-	//InitBody(groundBody2, (Vector2) { 0.0f, SCREEN_HEIGHT - 50.0f }, (Vector2) { groundPieceWidth, 50.0f }, 0.0f, DARKGRAY);
-	//InitBody(groundBody1, (Vector2) { groundPieceWidth + gap, SCREEN_HEIGHT - 50.0f }, (Vector2) { groundPieceWidth, 50.0f }, 0.0f, DARKGRAY);
+	 platformBody1 = &bodies[6];
+	 platformBody2 = &bodies[7];
+	 platformBody3 = &bodies[8];
+	 platformBody4 = &bodies[9];
+	 platformBody5 = &bodies[10];
+	 platformBody6 = &bodies[11];
+	 collectableBody = &bodies[12];
+
+	 platformBody7 = &bodies[13];
+	 platformBody8 = &bodies[14];
 
 
-	
+	 dividingwallBody1 = &bodies[15];
+	 dividingwallBody2 = &bodies[16];
 
-	// inivisible wall to the right of the screen
-	//InitBody(&bodies[7], (Vector2) { SCREEN_WIDTH, 0.0f }, (Vector2) { 50.0f, (float)SCREEN_HEIGHT }, 0.0f, DARKGRAY);
-	//InitBody(&bodies[8], (Vector2) { 0.0f - 50.0f, 0.0f }, (Vector2) { 50.0f, (float)SCREEN_HEIGHT }, 0.0f, DARKGRAY);
+	 doorBlueBody = &bodies[17];
+	 doorPinkBody = &bodies[18];
 
+	voidBody = &bodies[19];
+	winBody = &bodies[20];
+
+
+	 // Initialise Static bodies
+
+	 InitBody(maingroundBody, (Vector2) { 0.f, 400.f }, (Vector2) { 1650.f, 400.f }, 0.f, DARKGREEN);
+
+	 InitBody(platformBody1, (Vector2) { 500.0f, 300.0f }, (Vector2) { 150.0f, 20.0f }, 0.0f, BROWN);
+	 InitBody(platformBody2, (Vector2) { 900.f, 190.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+	 InitBody(platformBody3, (Vector2) { 300.f, 150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+	 InitBody(platformBody4, (Vector2) { 800.f, 50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+	 InitBody(platformBody5, (Vector2) { 700.f, -50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+	 InitBody(platformBody6, (Vector2) { 1000.f, -150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+
+	 InitBody(platformBody7, (Vector2) { 2500.f, 400.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+	 InitBody(platformBody8, (Vector2) { 2500.f, 400.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+
+	 InitBody(dividingwallBody1, (Vector2) { 1100.f, -700.f }, (Vector2) { 300.0f, 975.0f }, 0.f, BROWN);
 
 	//Initalise Moving bodies
 	
 	InitBody(playerBox, (Vector2) { 100.f, 300.f }, (Vector2) { playerWidth, playerHeight }, 1.f, RED);
 	playerBox->isPlayer = true;
 
-	// Initialise Static bodies
-	
-	InitBody(groundBody1, (Vector2) { 0.f, 400.f }, (Vector2) { 1000.f, 400.f }, 0.f, DARKGREEN);
-	InitBody(groundBody2, (Vector2) { 1500.f, 400.f }, (Vector2) { 500.f, 400.f }, 0.f, DARKGREEN);
-	InitBody(groundBody3, (Vector2) { 2500.f, 400.f }, (Vector2) { 3000.f, 400.f }, 0.f, DARKGREEN);
 
-	// Green box to be pushed always starts above platform 1
-	InitBody(pushBox, (Vector2) { 200.0f + 50.0f, 300.0f - 50.0f }, (Vector2) { 50.0f, 50.0f }, 1.0f, GREEN);
-	
-	InitBody(platformBody1, (Vector2) { 200.0f, 300.0f }, (Vector2) { 150.0f, 20.0f }, 0.0f, BROWN);
+	// init puzzle bodies
+	InitBody(pushBoxBlue, (Vector2) { 850, 0 }, (Vector2) { 50.0f, 50.0f }, 1.0f, DARKBLUE);
+	pushBoxBlue->isAlive = true;
+	InitBody(plateBlueBody, (Vector2) { 960.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, DARKBLUE);
+	InitBody(doorBlueBody, (Vector2) { 1225.f, 200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, DARKBLUE);
+
+
+	//InitBody(pushBoxPink, (Vector2) { 1000, 150 }, (Vector2) { 50.0f, 50.0f }, 1.0f, PINK);
 
 	
+
+
 	InitBody(voidBody, (Vector2) { 0.f, 700.f }, (Vector2) { 5000.f, 100.f }, 0.f, ORANGE);
-	voidBody->ResolveCollision = false;
 	
 	InitBody(winBody, (Vector2) { 4950.f, 300.f }, (Vector2) { 50.f, 100.f }, 0.f, GOLD);
-	winBody->ResolveCollision = false;
+	
 
 
 	//intialise collectable body
-	InitBody(collectableBody, (Vector2) { 275.0f, 200.0f }, (Vector2) { 20.0f, 20.0f }, 0.0f, GOLD);
-	collectableBody->ResolveCollision = false;
+	InitBody(collectableBody, (Vector2) { 1040.0f, -300.0f }, (Vector2) { 20.0f, 20.0f }, 0.0f, GOLD);
+	
 		
 	
 
@@ -632,7 +693,7 @@ int main ()
 	
 	//camera
 	camera.target = (Vector2){ 0,0 };
-	camera.offset = (Vector2){ (float)windowWidth / 2, (float)windowHeight / 2, };
+	camera.offset = (Vector2){ (float)windowWidth / 2, (float)windowHeight / 2 , };
 	camera.rotation = 0.f;
 	camera.zoom = 1.5f;
 
@@ -641,14 +702,13 @@ int main ()
 		//Make sure the frames run at the same speed for every computer
 		float dt = GetFrameTime();
 
-		camera.target = (Vector2){ bodies[0].position.x, bodies[0].position.y-20 };
+		camera.target = (Vector2){ bodies[0].position.x, bodies[0].position.y - 100 };
 
-		//printf("%d\n", score); //int
+		printf("%f,%f\n", bodies[0].position.x, bodies[0].position.y); //int
 		//printf("%d\n", win); //bool
 		//printf("%d\n", justDied);
 
 
-		
 		 // Update the game state machine based on user input and game conditions
 		GameStateMachine(dt);
 
