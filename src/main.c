@@ -18,7 +18,7 @@ const float GROUND_Y = 400.0f;
 
 const int windowWidth = 1290;
 const int windowHeight = 720;
-const int worldRightBound = 5000;
+const int worldRightBound = 3300;
 
 const float playerWidth = 30;
 const float playerHeight = 40;
@@ -32,6 +32,15 @@ float stopspeed;
 int score = 0.0f;
 int deaths = 0.0f;
 
+Texture2D ArrowTexture;
+Rectangle arrowSource;
+Rectangle arrowDest;
+
+int coyote_counter = 0;
+int coyote_max = 10;
+int buffer_counter = 0;
+int buffer_max = 6;
+bool jumped = true;
 
 bool needsRespawn = false;
 bool win = false;
@@ -100,7 +109,11 @@ Body* dividingwallBody2;
 Body* doorBlueBody;
 Body* doorPinkBody;
 
-Body* voidBody;
+Body* JumpPad;
+
+Body* voidBody1;
+Body* voidBody2;
+Body* voidBody3;
 Body* winBody;
 
 
@@ -315,17 +328,64 @@ void HandleInput(Body* b, float dt)
 
 	}
 
-	if (IsKeyDown(KEY_UP) || (IsKeyPressed(KEY_SPACE)))
+
+
+
+
+
+
+
+	//Coyote Time
+	if (!b->isGrounded)
 	{
-		// Only allow jumping if the body is grounded
-		if (b->isGrounded) {
-			b->velocity.y += JUMP_IMPLUSE * b->invMass;
-			b->isGrounded = false; // Reset grounded state after jump
+		//player is in air
+		if (coyote_counter > 0)
+		{ 
+			coyote_counter -= 1;
 		}
+		
+	}
+	else
+	{
+		//player is on ground
+		jumped = false;
+		coyote_counter = coyote_max;
 	}
 
-	//deceleration
-	//b->velocity.x -= b->velocity.x * b->friction * dt;
+	//jump buffer
+	if (IsKeyPressed(KEY_UP) || (IsKeyPressed(KEY_SPACE)))
+	{
+		buffer_counter = buffer_max;
+	}
+	
+
+	//jump
+	if (!jumped)
+	{
+		if (b->isGrounded || coyote_counter > 0)
+		{
+			if (buffer_counter > 0)
+			{
+				b->velocity.y += JUMP_IMPLUSE * b->invMass;
+
+				b->isGrounded = false; // Reset grounded state after jump
+				jumped = true;
+
+				buffer_counter = 0;
+			}
+			
+		}
+		
+	}
+
+	if (buffer_counter > 0)
+	{
+		buffer_counter -= 1;
+	}
+	
+
+
+
 
 	// making sure player can decelerate to 0
 	if (abs(b->velocity.x) < stopspeed * dt)
@@ -364,7 +424,10 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 	if (!bodies) {
 		return;
 	}
-
+	for (int i = 0; i < MAX_BODIES; i++)
+	{
+		bodies[i].isGrounded = false;
+	}
 	for (int i = 0; i < MAX_BODIES; i++) {
 		if (bodies[i].isAlive && bodies[i].invMass > 0.0f) {
 			// Check for collisions with all other bodies, but only check each pair once
@@ -378,8 +441,18 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 
 
 						}
-						
-						if (TestAABB(playerBox, voidBody))
+
+						if (TestAABB(playerBox, voidBody1))
+						{
+							needsRespawn = true;
+
+						}
+						if (TestAABB(playerBox, voidBody2))
+						{
+							needsRespawn = true;
+
+						}
+						if (TestAABB(playerBox, voidBody3))
 						{
 							needsRespawn = true;
 
@@ -390,25 +463,15 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 						{
 
 
-							if (bodies[9].isAlive)
+							if (collectableBody->isAlive)
 							{
 								score += 1;
-								
-								bodies[12].isAlive = false;
+
+								collectableBody->isAlive = false;
 
 							}
 
 
-						}
-						if (TestAABB(pushBoxBlue, plateBlueBody))
-						{
-
-
-							bodies[17].isAlive = false;
-						}
-						else
-						{
-							bodies[17].isAlive = true;
 						}
 						
 
@@ -418,6 +481,8 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 							if (bodies[i].position.y + bodies[i].size.y <= bodies[j].position.y + 5.0f) {
 								bodies[i].isGrounded = true;
 							}
+							
+
 						}
 
 
@@ -440,6 +505,49 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 			}
 		}
 	}
+
+}
+void UpdatePuzzles()
+{
+	if (TestAABB(pushBoxBlue, plateBlueBody))
+	{
+		doorBlueBody->isAlive = false;
+	}
+	else
+	{
+		doorBlueBody->isAlive = true;
+	}
+
+
+	if (TestAABB(pushBoxPink, platePinkBody))
+	{
+		doorPinkBody->isAlive = false;
+	}
+	else
+	{
+		doorPinkBody->isAlive = true;
+	}
+
+	
+	
+}
+
+void UpdateJumpPads()
+{
+
+	if (TestAABB(playerBox, JumpPad))
+	{
+		JUMP_IMPLUSE = -600.f;
+	}
+	else
+	{
+		JUMP_IMPLUSE = -300.f;
+	}
+	
+
+
+
+
 
 }
 
@@ -509,6 +617,7 @@ void GameStateMachine(float dt) {
 	// If any of the boxes fall below the screen, reset their position to the top of the screen
 	Vector2 resetpushBoxBluePosition = (Vector2){ 850, 0.f};
 	Vector2 resetPlayerBoxPosition = (Vector2){ 100.f, 300.f };
+	Vector2 resetpushBoxPinkPosition = (Vector2){ 1650, -100 };
 
 	switch (g_currentGameState) {
 	case GAME_START:
@@ -517,6 +626,7 @@ void GameStateMachine(float dt) {
 			g_currentGameState = GAME_RUNNING;
 			ResetBox(playerBox, resetPlayerBoxPosition);
 			ResetBox(pushBoxBlue, resetpushBoxBluePosition);
+			ResetBox(pushBoxPink, resetpushBoxPinkPosition);
 		}
 
 		// reset points
@@ -593,29 +703,36 @@ void InitialiseGame() {
 	 doorBlueBody = &bodies[17];
 	 doorPinkBody = &bodies[18];
 
-	voidBody = &bodies[19];
-	winBody = &bodies[20];
+	JumpPad = &bodies[19];
+
+	voidBody1 = &bodies[20];
+	voidBody2 = &bodies[21];
+	voidBody3 = &bodies[22];
+	winBody = &bodies[23];
+	
 
 
 	 // Initialise Static bodies
 
-	 InitBody(maingroundBody, (Vector2) { 0.f, 400.f }, (Vector2) { 1650.f, 400.f }, 0.f, DARKGREEN);
+	 InitBody(maingroundBody, (Vector2) { 0.f, 400.f }, (Vector2) { 2300.f, 400.f }, 0.f, DARKGREEN);
 
-	 InitBody(platformBody1, (Vector2) { 500.0f, 300.0f }, (Vector2) { 150.0f, 20.0f }, 0.0f, BROWN);
-	 InitBody(platformBody2, (Vector2) { 900.f, 190.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
-	 InitBody(platformBody3, (Vector2) { 300.f, 150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
-	 InitBody(platformBody4, (Vector2) { 800.f, 50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
-	 InitBody(platformBody5, (Vector2) { 700.f, -50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
-	 InitBody(platformBody6, (Vector2) { 1000.f, -150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+	 InitBody(platformBody1, (Vector2) { 500.0f, 300.0f }, (Vector2) { 150.0f, 20.0f }, 0.0f, DARKGREEN);
+	 InitBody(platformBody2, (Vector2) { 900.f, 190.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
+	 InitBody(platformBody3, (Vector2) { 300.f, 150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
+	 InitBody(platformBody4, (Vector2) { 800.f, 50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
+	 InitBody(platformBody5, (Vector2) { 700.f, -50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
+	 InitBody(platformBody6, (Vector2) { 1000.f, -150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
 
-	 InitBody(platformBody7, (Vector2) { 2500.f, 400.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
-	 InitBody(platformBody8, (Vector2) { 2500.f, 400.f }, (Vector2) { 150.0f, 20.0f }, 0.f, BROWN);
+	 InitBody(platformBody7, (Vector2) { 1550.f, -50.f }, (Vector2) { 500.0f, 100.0f }, 0.f, DARKGREEN);
+	 InitBody(platformBody8, (Vector2) { 3000.f, 0.f }, (Vector2) { 300.0f, 50.0f }, 0.f, DARKGREEN);
 
-	 InitBody(dividingwallBody1, (Vector2) { 1100.f, -700.f }, (Vector2) { 300.0f, 975.0f }, 0.f, BROWN);
+	 InitBody(dividingwallBody1, (Vector2) { 1100.f, -700.f }, (Vector2) { 300.0f, 975.0f }, 0.f, DARKBROWN);
+	 InitBody(dividingwallBody2, (Vector2) { 3000.f, -700.f }, (Vector2) { 500.0f, 500.0f }, 0.f, DARKBROWN);
+
 
 	//Initalise Moving bodies
 	
-	InitBody(playerBox, (Vector2) { 100.f, 300.f }, (Vector2) { playerWidth, playerHeight }, 1.f, RED);
+	InitBody(playerBox, (Vector2) { 100.f, 300.f }, (Vector2) { playerWidth, playerHeight }, 1.f, BLACK);
 	playerBox->isPlayer = true;
 
 
@@ -625,15 +742,18 @@ void InitialiseGame() {
 	InitBody(plateBlueBody, (Vector2) { 960.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, DARKBLUE);
 	InitBody(doorBlueBody, (Vector2) { 1225.f, 200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, DARKBLUE);
 
-
-	//InitBody(pushBoxPink, (Vector2) { 1000, 150 }, (Vector2) { 50.0f, 50.0f }, 1.0f, PINK);
-
+	InitBody(pushBoxPink, (Vector2) { 5000, -5000 }, (Vector2) { 50.0f, 50.0f }, 1.0f, PINK);
+	pushBoxPink->isAlive = true;
+	InitBody(platePinkBody, (Vector2) { 1700.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, PINK);
+	InitBody(doorPinkBody, (Vector2) {3100.f, -200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, PINK);
 	
+	InitBody(JumpPad, (Vector2) { 2200.f, 380.f }, (Vector2) { 80.0f, 20.0f }, 0.f, DARKPURPLE);
 
-
-	InitBody(voidBody, (Vector2) { 0.f, 700.f }, (Vector2) { 5000.f, 100.f }, 0.f, ORANGE);
+	InitBody(voidBody1, (Vector2) { 2300.f, 450.f }, (Vector2) { 1000.f, 100.f }, 0.f, RED);
+	InitBody(voidBody2, (Vector2) { 490.f, 370.f }, (Vector2) { 170.f, 30.f }, 0.f, RED);
+	InitBody(voidBody3, (Vector2) { 1750.f, -80.f }, (Vector2) { 150.f, 30.f }, 0.f, RED);
 	
-	InitBody(winBody, (Vector2) { 4950.f, 300.f }, (Vector2) { 50.f, 100.f }, 0.f, GOLD);
+	InitBody(winBody, (Vector2) { 3250.f, -200.f }, (Vector2) { 50.f, 200.f }, 0.f, GOLD);
 	
 
 
@@ -654,17 +774,18 @@ void DrawGame()
 	ClearBackground(BLUE);
 
 	//clouds
-	DrawRectangle(500, 100, 300, 100, WHITE);
-	DrawRectangle(2000, 0, 300, 150, WHITE);
-	DrawRectangle(1000, -50, 400, 200, WHITE);
-	DrawRectangle(3000, 0, 300, 100, WHITE);
-	DrawRectangle(4000, 80, 200, 100, WHITE);
-	DrawRectangle(4250, 10, 200, 100, WHITE);
-	DrawRectangle(3500, 100, 150, 50, WHITE);
+	
 
 	//bounds
 	DrawRectangle(-500, -2000, 500, 3000, DARKBROWN);
 	DrawRectangle(worldRightBound, -2000, 500, 3000, DARKBROWN);
+	
+	DrawTextureEx(ArrowTexture, (Vector2) { 100, 300 }, 0, 0.1, WHITE);
+	DrawTextureEx(ArrowTexture, (Vector2) { 800, 300 }, -90, 0.1, WHITE);
+	DrawTextureEx(ArrowTexture, (Vector2) { 750, -250 }, 0, 0.1, WHITE);
+	DrawTextureEx(ArrowTexture, (Vector2) { 2210, 300 }, -90, 0.1, WHITE);
+	DrawTextureEx(ArrowTexture, (Vector2) { 2500, -260 }, 0, 0.1, WHITE);
+	DrawTextureEx(ArrowTexture, (Vector2) { 2000, -200 }, -180, 0.1, WHITE);
 
 	DrawAllBodies(bodies);
 	DrawGameUI();
@@ -680,9 +801,17 @@ int main ()
 
 	// Utility function from resource_dir.h to find the resources folder and set it as the current working directory so we can load from it
 	SearchAndSetResourceDir("resources");
+	
+	        
+	
+	
+	
 
 	// Create the window and set FPS
 	InitWindow(windowWidth, windowHeight, "2D Platformer from scrach");
+	
+	SetTraceLogLevel(LOG_WARNING);
+
 	SetTargetFPS(60);
 	
 	stopspeed = ACCELERATION / 2.f;
@@ -702,30 +831,57 @@ int main ()
 		//Make sure the frames run at the same speed for every computer
 		float dt = GetFrameTime();
 
-		camera.target = (Vector2){ bodies[0].position.x, bodies[0].position.y - 100 };
+		ArrowTexture = LoadTexture("Arrow.png");
 
-		printf("%f,%f\n", bodies[0].position.x, bodies[0].position.y); //int
+		camera.target = (Vector2){ bodies[0].position.x, bodies[0].position.y - 100 };
+		
+		//printf("Texture size: %d x %d\n", ArrowTexture.width, ArrowTexture.height);
+		//printf("Working directory: %s\n", GetWorkingDirectory());
+		//printf("%f,%f\n", bodies[0].position.x, bodies[0].position.y); //int
 		//printf("%d\n", win); //bool
 		//printf("%d\n", justDied);
 
-
+		printf("Grounded: %d | Coyote: %d\n",
+			playerBox->isGrounded,
+			coyote_counter); 
 		 // Update the game state machine based on user input and game conditions
 		GameStateMachine(dt);
 
 		// 2. Apply Drag (Friction) only to the X axis. Purposly keep this out of the step physics function to show how drag is applied before physics step.
 		StepPhysicsForAllBodies(bodies, dt, GRAVITY);
 
+		UpdatePuzzles();
+
+		UpdateJumpPads();
+
 		// Collision resolution
 		ResolveCollisionsForAllBodies(bodies);
 
-		// Drawing
-		DrawGame();
-		
-	}
 
-	// cleanup
+		//testingcheatcommands
+		if (IsKeyPressed(KEY_E))
+		{
+			playerBox->position = (Vector2){ 1600, 300.f };
+		}
+		if (IsKeyPressed(KEY_R))
+		{
+			playerBox->position = (Vector2){
+			100.f, 300.f
+			};
+
+			// Drawing
+
+
+		}
+		
+		DrawGame();
 	
-	// destroy the window and cleanup the OpenGL context
-	CloseWindow();
-	return 0;
-}
+
+		// cleanup
+	}
+		// destroy the window and cleanup the OpenGL context
+	UnloadTexture(ArrowTexture);
+		CloseWindow();
+		return 0;
+
+	}
