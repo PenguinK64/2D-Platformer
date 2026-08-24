@@ -13,6 +13,8 @@ by Jeffery Myers is marked with CC0 1.0. To view a copy of this license, visit h
 
 #include <stdlib.h>
 
+#include <math.h>
+
 
 const float GROUND_Y = 400.0f;
 
@@ -25,8 +27,21 @@ const float playerHeight = 40;
 
 float ACCELERATION = 2000.f;
 float FRICTION = 3.f;
+
 float JUMP_IMPLUSE = -300.f;
+float JUMP_IMPLUSE_DEF = 0.f;
+float JUMP_CUT = 0.8f;
+
 float GRAVITY = 400.f;
+float RISE_GRAVITY_MULT = 0.9f;
+float FALL_GRAVITY_MULT = 1.5f;
+
+float APEX_SPEED_THRES = 30.0f;
+float APEX_GRAVITY_MULT = 0.7f;
+
+float MAX_FALL_SPEED = 400.0f;
+
+
 float stopspeed;
 
 int score = 0.0f;
@@ -41,6 +56,7 @@ int coyote_max = 10;
 int buffer_counter = 0;
 int buffer_max = 6;
 bool jumped = true;
+
 
 bool needsRespawn = false;
 bool win = false;
@@ -128,6 +144,7 @@ Body* winBody;
 typedef enum GameState {
 	GAME_START,
 	GAME_RUNNING,
+	GAME_PAUSED,
 	GAME_WIN,
 	GAME_LOSE
 } GameState;
@@ -299,13 +316,59 @@ void StepPhysics(Body* b, float dt, float gravity)
 		return;
 	}
 
-	b->velocity.x += dt * (b->force.x * b->invMass);
-	b->velocity.y += dt * (gravity + (b->force.y * b->invMass));
+	//horizonal force
 
+	b->velocity.x += dt * (b->force.x * b->invMass);
+
+	//gravity multiplier
+	float gravityMult = 1.0f;
+
+	if (b->velocity.y < 0.f)
+	{
+		//Rising
+		gravityMult = RISE_GRAVITY_MULT;
+
+	}
+	else
+	{
+		// Falling
+		gravityMult = FALL_GRAVITY_MULT;
+	}
+
+
+	// Apex hang
+	if (fabs(b->velocity.y) < APEX_SPEED_THRES)
+	{
+		gravityMult *= APEX_GRAVITY_MULT;
+	}
+
+
+	// Apply gravity
+	b->velocity.y += gravity * gravityMult * dt;
+
+	// Apply vertical force if you use it
+	b->velocity.y += dt * (b->force.y * b->invMass);
+
+
+	// Terminal velocity
+	if (b->velocity.y > MAX_FALL_SPEED)
+	{
+		b->velocity.y = MAX_FALL_SPEED;
+	}
+
+
+	// Move body
 	b->position.x += b->velocity.x * dt;
 	b->position.y += b->velocity.y * dt;
 
 	b->force = (Vector2){ 0.0f, 0.0f };
+
+	printf("Y Vel: %f | Gravity: %f | Mult: %f\n",
+		b->velocity.y,
+		gravity,
+		gravityMult);
+
+	
 }
 
 void HandleInput(Body* b, float dt)
@@ -327,14 +390,8 @@ void HandleInput(Body* b, float dt)
 		b->velocity.x -= b->accel * dt;
 
 	}
-
-
-
-
-
-
-
-
+	//JUMP CODE:
+	
 	//Coyote Time
 	if (!b->isGrounded)
 	{
@@ -349,6 +406,7 @@ void HandleInput(Body* b, float dt)
 	{
 		//player is on ground
 		jumped = false;
+		
 		coyote_counter = coyote_max;
 	}
 
@@ -364,9 +422,15 @@ void HandleInput(Body* b, float dt)
 	{
 		if (b->isGrounded || coyote_counter > 0)
 		{
+
+			
+
+
 			if (buffer_counter > 0)
 			{
 				b->velocity.y += JUMP_IMPLUSE * b->invMass;
+
+				
 
 				b->isGrounded = false; // Reset grounded state after jump
 				jumped = true;
@@ -378,6 +442,13 @@ void HandleInput(Body* b, float dt)
 		
 	}
 
+	//variable jump height
+	if (IsKeyReleased(KEY_UP) || (IsKeyReleased(KEY_SPACE)) && playerBox->velocity.y < 0)
+	{
+		playerBox->velocity.y *= JUMP_CUT;
+	}
+
+	//count down jump buffer
 	if (buffer_counter > 0)
 	{
 		buffer_counter -= 1;
@@ -392,6 +463,8 @@ void HandleInput(Body* b, float dt)
 	{
 		b->velocity.x = 0;
 	}
+
+
 	//stop player from going off screen
 	if (bodies[0].position.x < -0) {
 
@@ -439,9 +512,10 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 						{
 							win = true;
 
-
 						}
 
+
+						//red boxes that cause the player to die and respawn on collision
 						if (TestAABB(playerBox, voidBody1))
 						{
 							needsRespawn = true;
@@ -459,6 +533,7 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 						}
 
 
+						//collectable box collision to add to score and remove it after you collect it 
 						if (TestAABB(playerBox, collectableBody))
 						{
 
@@ -488,6 +563,7 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 
 						ResolveCollision(&bodies[i], &bodies[j]);
 
+						//handles death counter and respawning player
 						if (needsRespawn) {
 							
 							deaths += 1;
@@ -507,6 +583,8 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 	}
 
 }
+
+//handles push box collisions with the plates to open up the doors when they collide
 void UpdatePuzzles()
 {
 	if (TestAABB(pushBoxBlue, plateBlueBody))
@@ -532,6 +610,7 @@ void UpdatePuzzles()
 	
 }
 
+//jump pad collision that increases jump force 
 void UpdateJumpPads()
 {
 
@@ -541,7 +620,7 @@ void UpdateJumpPads()
 	}
 	else
 	{
-		JUMP_IMPLUSE = -300.f;
+		JUMP_IMPLUSE = JUMP_IMPLUSE_DEF;
 	}
 	
 
@@ -572,32 +651,41 @@ void DrawGameUI()
 	case GAME_START:
 		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, BLUE);
 		win = false;
-		DrawText("Puzzle Platformer", bodies[0].position.x-200, bodies[0].position.y-200, 50, GREEN);
-		DrawText("Press Enter to Start", bodies[0].position.x - 200, bodies[0].position.y - 100, 20, DARKGRAY);
+		DrawText("Puzzle Platformer", bodies[0].position.x-400, bodies[0].position.y-200, 50, GREEN);
+		DrawText("Press Enter to Start", bodies[0].position.x - 350, bodies[0].position.y - 140, 30, DARKGRAY);
+		DrawText("CONTROLS : Arrows / WASD: Move | Space / Up Arrow: Jump \n Enter: Reset Box Position", bodies[0].position.x - 300, bodies[0].position.y - 80, 20, WHITE);
+		DrawText("OBJECTIVE : Push Boxes to their corresponding plates \n to progress, collect the gold cube and reach the end of the level!", bodies[0].position.x - 300, bodies[0].position.y -10, 20, WHITE);
+		DrawText("Be careful not to touch any red!", bodies[0].position.x - 300, bodies[0].position.y +50, 20, RED);
+
+
 		break;
 	case GAME_RUNNING:
 		
 		if (!win)
 		{
+
+		DrawRectangle(bodies[0].position.x - 420, bodies[0].position.y - 205, 150, 50, WHITE);
 		DrawText(TextFormat("Score: %d \nDeaths: %d", score, deaths), bodies[0].position.x - 400, bodies[0].position.y - 200, 20, DARKGRAY);
 		
+		
 		}
-		//DrawText("Arrows: Move | Space: Jump", 10, windowHeight - 30, 20, WHITE);
-		//DrawText("Get Green Box in hole", windowWidth / 2 + 50, windowHeight - 30, 20, WHITE);
-	
+		
 		break;
-	//case GAME_PAUSED:
-		//DrawText("Game Paused\nPress Key to Resume", SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT / 2, 20, DARKGRAY);
-		//break;
+	case GAME_PAUSED:
+		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, GRAY);
+		DrawText("Game Paused!", bodies[0].position.x - 200, bodies[0].position.y - 200, 50, BLUE);
+		DrawText("Press Enter to continue \nor E to go to Menu", bodies[0].position.x - 200, bodies[0].position.y - 100, 30, WHITE);
+		
+
+
+		break;
 	case GAME_WIN:
-		
-		
 		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, BLUE);
-		DrawText("YOU WON!\nPress Key to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 30, RED);
-		//DrawText("        You Win!\nPress Key to Restart", bodies[0].position.x - 100, bodies[0].position.y - 100, 20, DARKGRAY);
+		DrawText("YOU WON!\nPress Enter to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 30, RED);
 		break;
+
 	case GAME_LOSE:
-		DrawText("        You Lose!\nPress Key to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 20, DARKGRAY);
+		DrawText("        You Lose!\nPress Enter to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 20, DARKGRAY);
 		break;
 	}
 }
@@ -614,7 +702,7 @@ void ResetBox(Body* box, Vector2 position)
 
 void GameStateMachine(float dt) {
 
-	// If any of the boxes fall below the screen, reset their position to the top of the screen
+	//reset positions of moveable boxes and player
 	Vector2 resetpushBoxBluePosition = (Vector2){ 850, 0.f};
 	Vector2 resetPlayerBoxPosition = (Vector2){ 100.f, 300.f };
 	Vector2 resetpushBoxPinkPosition = (Vector2){ 1650, -100 };
@@ -635,19 +723,37 @@ void GameStateMachine(float dt) {
 
 		break;
 	case GAME_RUNNING:
+
+		if (IsKeyPressed(KEY_ENTER)) 
+		{
+			ResetBox(pushBoxBlue, resetpushBoxBluePosition);
+			ResetBox(pushBoxPink, resetpushBoxPinkPosition);
+		}
 		HandleInput(playerBox, dt);
+
 		//win condition
 		if (win)
 		{
 			g_currentGameState = GAME_WIN;
 		}
+
+		if (IsKeyPressed(KEY_P))
+		{
+			g_currentGameState = GAME_PAUSED;
+			
+		}
 		break;
 		
-	//case GAME_PAUSED:
-		//if (IsKeyPressed(KEY_ENTER)) {
-		//	g_currentGameState = GAME_RUNNING;
-		//}
-		//break;
+	case GAME_PAUSED:
+		if (IsKeyPressed(KEY_ENTER)) {
+		g_currentGameState = GAME_RUNNING;
+		}
+
+		if (IsKeyPressed(KEY_E)) {
+			g_currentGameState = GAME_START;
+		}
+
+		break;
 
 
 
@@ -747,12 +853,18 @@ void InitialiseGame() {
 	InitBody(platePinkBody, (Vector2) { 1700.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, PINK);
 	InitBody(doorPinkBody, (Vector2) {3100.f, -200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, PINK);
 	
+
+	//init jump pad
 	InitBody(JumpPad, (Vector2) { 2200.f, 380.f }, (Vector2) { 80.0f, 20.0f }, 0.f, DARKPURPLE);
 
+
+	//init death bodies
 	InitBody(voidBody1, (Vector2) { 2300.f, 450.f }, (Vector2) { 1000.f, 100.f }, 0.f, RED);
 	InitBody(voidBody2, (Vector2) { 490.f, 370.f }, (Vector2) { 170.f, 30.f }, 0.f, RED);
 	InitBody(voidBody3, (Vector2) { 1750.f, -80.f }, (Vector2) { 150.f, 30.f }, 0.f, RED);
 	
+
+	//init win body
 	InitBody(winBody, (Vector2) { 3250.f, -200.f }, (Vector2) { 50.f, 200.f }, 0.f, GOLD);
 	
 
@@ -770,16 +882,16 @@ Camera2D camera = { 0 };
 void DrawGame()
 {
 	BeginDrawing();
-	BeginMode2D(camera);
-	ClearBackground(BLUE);
 
-	//clouds
-	
+	BeginMode2D(camera);
+
+	ClearBackground(BLUE);
 
 	//bounds
 	DrawRectangle(-500, -2000, 500, 3000, DARKBROWN);
 	DrawRectangle(worldRightBound, -2000, 500, 3000, DARKBROWN);
-	
+
+	//arrows
 	DrawTextureEx(ArrowTexture, (Vector2) { 100, 300 }, 0, 0.1, WHITE);
 	DrawTextureEx(ArrowTexture, (Vector2) { 800, 300 }, -90, 0.1, WHITE);
 	DrawTextureEx(ArrowTexture, (Vector2) { 750, -250 }, 0, 0.1, WHITE);
@@ -788,8 +900,11 @@ void DrawGame()
 	DrawTextureEx(ArrowTexture, (Vector2) { 2000, -200 }, -180, 0.1, WHITE);
 
 	DrawAllBodies(bodies);
+
 	DrawGameUI();
+
 	EndMode2D();
+
 	EndDrawing();
 }
 
@@ -802,19 +917,17 @@ int main ()
 	// Utility function from resource_dir.h to find the resources folder and set it as the current working directory so we can load from it
 	SearchAndSetResourceDir("resources");
 	
-	        
-	
-	
-	
-
 	// Create the window and set FPS
 	InitWindow(windowWidth, windowHeight, "2D Platformer from scrach");
 	
+	//remove unneeded info in the console
 	SetTraceLogLevel(LOG_WARNING);
 
 	SetTargetFPS(60);
 	
+	//setting variables as other variables
 	stopspeed = ACCELERATION / 2.f;
+	JUMP_IMPLUSE_DEF = JUMP_IMPLUSE;
 	
 	// Initialise the game state and bodies
 	InitialiseGame();
@@ -835,15 +948,18 @@ int main ()
 
 		camera.target = (Vector2){ bodies[0].position.x, bodies[0].position.y - 100 };
 		
-		//printf("Texture size: %d x %d\n", ArrowTexture.width, ArrowTexture.height);
-		//printf("Working directory: %s\n", GetWorkingDirectory());
-		//printf("%f,%f\n", bodies[0].position.x, bodies[0].position.y); //int
-		//printf("%d\n", win); //bool
-		//printf("%d\n", justDied);
+		//DEBUGGING:
+			//printf("Texture size: %d x %d\n", ArrowTexture.width, ArrowTexture.height);
+			//printf("Working directory: %s\n", GetWorkingDirectory());
+			//printf("%f,%f\n", bodies[0].position.x, bodies[0].position.y); //int
+			//printf("%d\n", win); //bool
+			//printf("%d\n", justDied);
+			//printf("Grounded: %d | Coyote: %d\n",
+			//playerBox->isGrounded,
+		//	coyote_counter); 
 
-		printf("Grounded: %d | Coyote: %d\n",
-			playerBox->isGrounded,
-			coyote_counter); 
+
+
 		 // Update the game state machine based on user input and game conditions
 		GameStateMachine(dt);
 
@@ -858,7 +974,7 @@ int main ()
 		ResolveCollisionsForAllBodies(bodies);
 
 
-		//testingcheatcommands
+		//testing cheat keybinds
 		if (IsKeyPressed(KEY_E))
 		{
 			playerBox->position = (Vector2){ 1600, 300.f };
@@ -868,19 +984,14 @@ int main ()
 			playerBox->position = (Vector2){
 			100.f, 300.f
 			};
-
-			// Drawing
-
-
 		}
-		
+		// Drawing
 		DrawGame();
 	
 
-		// cleanup
 	}
-		// destroy the window and cleanup the OpenGL context
-	UnloadTexture(ArrowTexture);
+		// destroy the window and cleanup
+		UnloadTexture(ArrowTexture);
 		CloseWindow();
 		return 0;
 
