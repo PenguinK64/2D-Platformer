@@ -16,6 +16,35 @@ by Jeffery Myers is marked with CC0 1.0. To view a copy of this license, visit h
 #include <math.h>
 
 
+// ==================== COLOUR PALETTE ====================
+
+Color backgroundColor = { 220, 229, 209, 255 };
+Color platformColor = { 107, 127, 90, 255 };
+Color playerColor = { 229, 140, 58, 255 };
+
+Color collectibleColor = { 242, 201, 76, 255 };
+Color bouncePadColor = { 93, 189, 157, 255 };
+
+Color bluePuzzleColor = { 74, 123, 190, 255 };
+Color pinkPuzzleColor = { 210, 109, 140, 255 };
+
+Color hazardColor = { 217, 71, 71, 255 };
+Color textColor = { 47, 59, 46, 255 };
+
+// ==================== AUDIO & TEXTURES ====================
+
+Texture2D ArrowTexture;
+Sound HazardSound;
+Sound JumpSound;
+Sound WinSound;
+Sound CollectableSound;
+Sound UnlockDoorSound;
+
+bool Blue_UnlockDoorSound_Played = false;
+bool Pink_UnlockDoorSound_Played = false;
+
+
+// ==================== GAME / WORLD SETTINGS ====================
 const float GROUND_Y = 400.0f;
 
 const int windowWidth = 1290;
@@ -25,6 +54,17 @@ const int worldRightBound = 3300;
 const float playerWidth = 30;
 const float playerHeight = 40;
 
+
+
+int score = 0.0f;
+int deaths = 0.0f;
+
+bool needsRespawn = false;
+bool win = false;
+bool blueUnlocked = false;
+bool pinkUnlocked = false;
+
+// ==================== PHYSICS TUNING ====================
 float ACCELERATION = 2000.f;
 float FRICTION = 3.f;
 
@@ -40,16 +80,9 @@ float APEX_SPEED_THRES = 30.0f;
 float APEX_GRAVITY_MULT = 0.7f;
 
 float MAX_FALL_SPEED = 400.0f;
-
-
 float stopspeed;
 
-int score = 0.0f;
-int deaths = 0.0f;
-
-Texture2D ArrowTexture;
-Rectangle arrowSource;
-Rectangle arrowDest;
+// Coyote time and jump buffering make jump input more forgiving.
 
 int coyote_counter = 0;
 int coyote_max = 10;
@@ -58,19 +91,9 @@ int buffer_max = 6;
 bool jumped = true;
 
 
-bool needsRespawn = false;
-bool win = false;
-bool blueUnlocked = false;
-bool pinkUnlocked = false;
 
-
-//Ground and Collectable
-
-
-
-
-
-// Body structure to hold player data
+// ==================== PHYSICS BODY DATA ====================
+// Shared data used by the player, platforms, puzzle boxes and other physics bodies.
 typedef struct {
 
 	bool isAlive;
@@ -96,8 +119,8 @@ typedef struct {
 
 }Body;
 
-//const int MAX_BODIES = 16;	// new way to define constant but not working in visual studio
-#define MAX_BODIES 40	// old way to define constant
+// All bodies are stored in one array so they can be updated and collision-checked in loops.
+#define MAX_BODIES 40	
 Body bodies[MAX_BODIES];
 
 Body* playerBox;
@@ -132,14 +155,7 @@ Body* voidBody2;
 Body* voidBody3;
 Body* winBody;
 
-
-
-
-
-
-
-
-
+// ==================== GAME STATE ====================
 
 typedef enum GameState {
 	GAME_START,
@@ -151,7 +167,8 @@ typedef enum GameState {
 
 GameState g_currentGameState = GAME_START;
 
-// Initialise a body with position, size
+
+// ==================== BODY INITIALISATION ====================
 void InitBody(Body* b, Vector2 pos, Vector2 bounds, float mass, Color color) {
 
 	if (!b) {
@@ -174,6 +191,7 @@ void InitBody(Body* b, Vector2 pos, Vector2 bounds, float mass, Color color) {
 	b->mass = mass;
 	b->invMass = 0.f;
 
+	// Inverse mass makes static bodies (mass 0) stay fixed during collision resolution.
 	if (mass > 0.f)
 	{
 		b->invMass = 1.f / mass;
@@ -182,9 +200,8 @@ void InitBody(Body* b, Vector2 pos, Vector2 bounds, float mass, Color color) {
 
 
 
-
-// Returns true if Box A and Box B are overlapping
-
+// ==================== COLLISION DETECTION ====================
+// AABB collision: both X and Y ranges must overlap for a collision to occur.
 bool TestAABB(Body* bodyA, Body* bodyB)
 {
 	// Check for null pointers
@@ -205,8 +222,8 @@ bool TestAABB(Body* bodyA, Body* bodyB)
 
 
 
-// Resolve collision between two bodies by moving the first body out of the second
-
+// ==================== COLLISION RESOLUTION ====================
+// Finds the smallest overlap and separates the bodies along that axis.
 void ResolveCollision(Body* a, Body* b)
 {
 	if (!a || !b) {
@@ -308,7 +325,9 @@ void ResolveCollision(Body* a, Body* b)
 
 
 
-//Step the physics for a body
+// ==================== PHYSICS STEP ====================
+// Integrates force, gravity and velocity each frame using delta time.
+
 void StepPhysics(Body* b, float dt, float gravity)
 {
 	if (b->invMass == 0.0f)
@@ -316,11 +335,11 @@ void StepPhysics(Body* b, float dt, float gravity)
 		return;
 	}
 
-	//horizonal force
+	// Apply horizontal force using inverse mass.
 
 	b->velocity.x += dt * (b->force.x * b->invMass);
 
-	//gravity multiplier
+	// Choose a gravity multiplier based on whether the body is rising or falling.
 	float gravityMult = 1.0f;
 
 	if (b->velocity.y < 0.f)
@@ -336,41 +355,36 @@ void StepPhysics(Body* b, float dt, float gravity)
 	}
 
 
-	// Apex hang
+	// Apex hang: reduce gravity briefly when vertical velocity is close to zero.
 	if (fabs(b->velocity.y) < APEX_SPEED_THRES)
 	{
 		gravityMult *= APEX_GRAVITY_MULT;
 	}
 
 
-	// Apply gravity
+	// Apply the customised gravity calculation.
 	b->velocity.y += gravity * gravityMult * dt;
 
-	// Apply vertical force if you use it
+	// Apply any additional vertical force.
 	b->velocity.y += dt * (b->force.y * b->invMass);
 
 
-	// Terminal velocity
+	// Limit maximum fall speed.
 	if (b->velocity.y > MAX_FALL_SPEED)
 	{
 		b->velocity.y = MAX_FALL_SPEED;
 	}
 
 
-	// Move body
+	// Integrate velocity into position using delta time.
 	b->position.x += b->velocity.x * dt;
 	b->position.y += b->velocity.y * dt;
 
 	b->force = (Vector2){ 0.0f, 0.0f };
 
-	printf("Y Vel: %f | Gravity: %f | Mult: %f\n",
-		b->velocity.y,
-		gravity,
-		gravityMult);
-
-	
 }
 
+// ==================== PLAYER INPUT ====================
 void HandleInput(Body* b, float dt)
 {
 	if (!b) {
@@ -390,9 +404,10 @@ void HandleInput(Body* b, float dt)
 		b->velocity.x -= b->accel * dt;
 
 	}
-	//JUMP CODE:
-	
-	//Coyote Time
+
+	// -------------------- JUMP ASSISTS --------------------
+
+	// Coyote time: keep jump available briefly after walking off a platform.
 	if (!b->isGrounded)
 	{
 		//player is in air
@@ -410,14 +425,15 @@ void HandleInput(Body* b, float dt)
 		coyote_counter = coyote_max;
 	}
 
-	//jump buffer
+	// Jump buffer: remember a jump press briefly before the player is able to jump.
 	if (IsKeyPressed(KEY_UP) || (IsKeyPressed(KEY_SPACE)))
 	{
 		buffer_counter = buffer_max;
 	}
 	
 
-	//jump
+	// Perform a normal or coyote-time jump when a buffered input is available.
+
 	if (!jumped)
 	{
 		if (b->isGrounded || coyote_counter > 0)
@@ -429,7 +445,7 @@ void HandleInput(Body* b, float dt)
 			if (buffer_counter > 0)
 			{
 				b->velocity.y += JUMP_IMPLUSE * b->invMass;
-
+				PlaySound(JumpSound);
 				
 
 				b->isGrounded = false; // Reset grounded state after jump
@@ -442,30 +458,27 @@ void HandleInput(Body* b, float dt)
 		
 	}
 
-	//variable jump height
+	// Variable jump height: releasing jump while rising cuts the remaining upward velocity.
 	if (IsKeyReleased(KEY_UP) || (IsKeyReleased(KEY_SPACE)) && playerBox->velocity.y < 0)
 	{
 		playerBox->velocity.y *= JUMP_CUT;
 	}
 
-	//count down jump buffer
+	// Count down unused buffered input.
 	if (buffer_counter > 0)
 	{
 		buffer_counter -= 1;
 	}
 	
 
-
-
-
-	// making sure player can decelerate to 0
+	// Snap very small horizontal speeds to zero to avoid endless sliding.
 	if (abs(b->velocity.x) < stopspeed * dt)
 	{
 		b->velocity.x = 0;
 	}
 
 
-	//stop player from going off screen
+	// Keep the player within the horizontal world bounds.
 	if (bodies[0].position.x < -0) {
 
 		bodies[0].position.x = -0;
@@ -476,6 +489,8 @@ void HandleInput(Body* b, float dt)
 		bodies[0].velocity.x = 0;
 	}
 }
+
+// ==================== PHYSICS UPDATE ====================
 
 void StepPhysicsForAllBodies(Body* bodies, float dt, float gravity)
 {
@@ -491,6 +506,8 @@ void StepPhysicsForAllBodies(Body* bodies, float dt, float gravity)
 		}
 	}
 }
+
+// Checks collision pairs for all active bodies and resolves each pair once.
 
 void ResolveCollisionsForAllBodies(Body* bodies)
 {
@@ -515,25 +532,28 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 						}
 
 
-						//red boxes that cause the player to die and respawn on collision
+						// Hazard bodies trigger a player respawn on collision.
 						if (TestAABB(playerBox, voidBody1))
 						{
 							needsRespawn = true;
+							PlaySound(HazardSound);
 
 						}
 						if (TestAABB(playerBox, voidBody2))
 						{
 							needsRespawn = true;
+							PlaySound(HazardSound);
 
 						}
 						if (TestAABB(playerBox, voidBody3))
 						{
 							needsRespawn = true;
+							PlaySound(HazardSound);
 
 						}
 
 
-						//collectable box collision to add to score and remove it after you collect it 
+						// Collecting the gold body increases score once, then disables the collectable.
 						if (TestAABB(playerBox, collectableBody))
 						{
 
@@ -541,6 +561,7 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 							if (collectableBody->isAlive)
 							{
 								score += 1;
+								PlaySound(CollectableSound);
 
 								collectableBody->isAlive = false;
 
@@ -563,7 +584,7 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 
 						ResolveCollision(&bodies[i], &bodies[j]);
 
-						//handles death counter and respawning player
+						// Respawn the player once and increment the death counter.
 						if (needsRespawn) {
 							
 							deaths += 1;
@@ -584,33 +605,46 @@ void ResolveCollisionsForAllBodies(Body* bodies)
 
 }
 
-//handles push box collisions with the plates to open up the doors when they collide
+// ==================== PUZZLE LOGIC ====================
+// Pressure plates disable their matching doors while the correct push box overlaps them.
 void UpdatePuzzles()
 {
 	if (TestAABB(pushBoxBlue, plateBlueBody))
 	{
 		doorBlueBody->isAlive = false;
+		if (!Blue_UnlockDoorSound_Played)
+		{
+			PlaySound(UnlockDoorSound);
+			Blue_UnlockDoorSound_Played = true;
+		}
 	}
 	else
 	{
 		doorBlueBody->isAlive = true;
+		Blue_UnlockDoorSound_Played = false;
 	}
 
 
 	if (TestAABB(pushBoxPink, platePinkBody))
 	{
 		doorPinkBody->isAlive = false;
+		if (!Pink_UnlockDoorSound_Played)
+		{
+			PlaySound(UnlockDoorSound);
+			Pink_UnlockDoorSound_Played = true;
+		}
 	}
 	else
 	{
 		doorPinkBody->isAlive = true;
+		Pink_UnlockDoorSound_Played = false;
 	}
-
-	
 	
 }
 
-//jump pad collision that increases jump force 
+
+
+// Jump pad temporarily increases the jump impulse while the player overlaps it.
 void UpdateJumpPads()
 {
 
@@ -622,14 +656,11 @@ void UpdateJumpPads()
 	{
 		JUMP_IMPLUSE = JUMP_IMPLUSE_DEF;
 	}
-	
-
-
-
-
 
 }
 
+// ==================== DRAWING ====================
+// Draw all currently active physics bodies.
 void DrawAllBodies(Body* bodies)
 {
 	if (!bodies) {
@@ -644,18 +675,19 @@ void DrawAllBodies(Body* bodies)
 	}
 }
 
+// Draw UI appropriate to the current game state.
 void DrawGameUI()
 {
 	// return state
 	switch (g_currentGameState) {
 	case GAME_START:
-		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, BLUE);
+		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, backgroundColor);
 		win = false;
-		DrawText("Puzzle Platformer", bodies[0].position.x-400, bodies[0].position.y-200, 50, GREEN);
-		DrawText("Press Enter to Start", bodies[0].position.x - 350, bodies[0].position.y - 140, 30, DARKGRAY);
-		DrawText("CONTROLS : Arrows / WASD: Move | Space / Up Arrow: Jump \n Enter: Reset Box Position", bodies[0].position.x - 300, bodies[0].position.y - 80, 20, WHITE);
-		DrawText("OBJECTIVE : Push Boxes to their corresponding plates \n to progress, collect the gold cube and reach the end of the level!", bodies[0].position.x - 300, bodies[0].position.y -10, 20, WHITE);
-		DrawText("Be careful not to touch any red!", bodies[0].position.x - 300, bodies[0].position.y +50, 20, RED);
+		DrawText("Puzzle Platformer", bodies[0].position.x-400, bodies[0].position.y-200, 50, textColor);
+		DrawText("Press Enter to Start", bodies[0].position.x - 350, bodies[0].position.y - 140, 30, textColor);
+		DrawText("CONTROLS : Arrows / WASD: Move | Space / Up Arrow: Jump \n Enter: Reset Box Position", bodies[0].position.x - 300, bodies[0].position.y - 80, 20, textColor);
+		DrawText("OBJECTIVE : Push Boxes to their corresponding plates \n to progress, collect the gold cube and reach the end of the level!", bodies[0].position.x - 300, bodies[0].position.y -10, 20, textColor);
+		DrawText("Be careful not to touch any red!", bodies[0].position.x - 300, bodies[0].position.y +50, 20, textColor);
 
 
 		break;
@@ -665,31 +697,32 @@ void DrawGameUI()
 		{
 
 		DrawRectangle(bodies[0].position.x - 420, bodies[0].position.y - 205, 150, 50, WHITE);
-		DrawText(TextFormat("Score: %d \nDeaths: %d", score, deaths), bodies[0].position.x - 400, bodies[0].position.y - 200, 20, DARKGRAY);
+		DrawText(TextFormat("Score: %d \nDeaths: %d", score, deaths), bodies[0].position.x - 400, bodies[0].position.y - 200, 20, textColor);
 		
 		
 		}
 		
 		break;
 	case GAME_PAUSED:
-		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, GRAY);
-		DrawText("Game Paused!", bodies[0].position.x - 200, bodies[0].position.y - 200, 50, BLUE);
-		DrawText("Press Enter to continue \nor E to go to Menu", bodies[0].position.x - 200, bodies[0].position.y - 100, 30, WHITE);
+		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, backgroundColor);
+		DrawText("Game Paused!", bodies[0].position.x - 200, bodies[0].position.y - 200, 50, textColor);
+		DrawText("Press Enter to continue \nor E to go to Menu", bodies[0].position.x - 200, bodies[0].position.y - 100, 30, textColor);
 		
 
 
 		break;
 	case GAME_WIN:
-		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, BLUE);
-		DrawText("YOU WON!\nPress Enter to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 30, RED);
+		DrawRectangle(bodies[0].position.x - 500, bodies[0].position.y - 400, 1500, 1000, backgroundColor);
+		DrawText("YOU WON!\nPress Enter to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 30, textColor);
 		break;
 
 	case GAME_LOSE:
-		DrawText("        You Lose!\nPress Enter to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 20, DARKGRAY);
+		DrawText("        You Lose!\nPress Enter to Restart", bodies[0].position.x - 200, bodies[0].position.y - 200, 20, textColor);
 		break;
 	}
 }
 
+// Reset a movable body to a known position with zero velocity.
 void ResetBox(Body* box, Vector2 position)
 {
 	if (!box) {
@@ -700,6 +733,9 @@ void ResetBox(Body* box, Vector2 position)
 	box->velocity = (Vector2){ 0.0f, 0.0f };
 }
 
+
+// ==================== GAME FLOW ====================
+// Handles start, running, pause and end states plus state-specific input.
 void GameStateMachine(float dt) {
 
 	//reset positions of moveable boxes and player
@@ -735,6 +771,7 @@ void GameStateMachine(float dt) {
 		if (win)
 		{
 			g_currentGameState = GAME_WIN;
+			PlaySound(WinSound);
 		}
 
 		if (IsKeyPressed(KEY_P))
@@ -779,8 +816,8 @@ void GameStateMachine(float dt) {
 	}
 }
 
-// Initialise the game state and bodies
-// -----------------------------------------------------------------------------
+// ==================== LEVEL SETUP ====================
+// Assign body pointers and initialise all level objects.
 void InitialiseGame() {
 	// Get a pointer reference to an array objects in the scene
 	playerBox = &bodies[0];
@@ -820,63 +857,66 @@ void InitialiseGame() {
 
 	 // Initialise Static bodies
 
-	 InitBody(maingroundBody, (Vector2) { 0.f, 400.f }, (Vector2) { 2300.f, 400.f }, 0.f, DARKGREEN);
+	 InitBody(maingroundBody, (Vector2) { 0.f, 400.f }, (Vector2) { 2300.f, 400.f }, 0.f, platformColor);
 
-	 InitBody(platformBody1, (Vector2) { 500.0f, 300.0f }, (Vector2) { 150.0f, 20.0f }, 0.0f, DARKGREEN);
-	 InitBody(platformBody2, (Vector2) { 900.f, 190.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
-	 InitBody(platformBody3, (Vector2) { 300.f, 150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
-	 InitBody(platformBody4, (Vector2) { 800.f, 50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
-	 InitBody(platformBody5, (Vector2) { 700.f, -50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
-	 InitBody(platformBody6, (Vector2) { 1000.f, -150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, DARKGREEN);
+	 InitBody(platformBody1, (Vector2) { 500.0f, 300.0f }, (Vector2) { 150.0f, 20.0f }, 0.0f, platformColor);
+	 InitBody(platformBody2, (Vector2) { 900.f, 190.f }, (Vector2) { 150.0f, 20.0f }, 0.f, platformColor);
+	 InitBody(platformBody3, (Vector2) { 300.f, 150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, platformColor);
+	 InitBody(platformBody4, (Vector2) { 800.f, 50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, platformColor);
+	 InitBody(platformBody5, (Vector2) { 700.f, -50.f }, (Vector2) { 150.0f, 20.0f }, 0.f, platformColor);
+	 InitBody(platformBody6, (Vector2) { 1000.f, -150.f }, (Vector2) { 150.0f, 20.0f }, 0.f, platformColor);
 
-	 InitBody(platformBody7, (Vector2) { 1550.f, -50.f }, (Vector2) { 500.0f, 100.0f }, 0.f, DARKGREEN);
-	 InitBody(platformBody8, (Vector2) { 3000.f, 0.f }, (Vector2) { 300.0f, 50.0f }, 0.f, DARKGREEN);
+	 InitBody(platformBody7, (Vector2) { 1550.f, -50.f }, (Vector2) { 500.0f, 100.0f }, 0.f, platformColor);
+	 InitBody(platformBody8, (Vector2) { 3000.f, 0.f }, (Vector2) { 300.0f, 50.0f }, 0.f, platformColor);
 
-	 InitBody(dividingwallBody1, (Vector2) { 1100.f, -700.f }, (Vector2) { 300.0f, 975.0f }, 0.f, DARKBROWN);
-	 InitBody(dividingwallBody2, (Vector2) { 3000.f, -700.f }, (Vector2) { 500.0f, 500.0f }, 0.f, DARKBROWN);
+	 InitBody(dividingwallBody1, (Vector2) { 1100.f, -700.f }, (Vector2) { 300.0f, 975.0f }, 0.f, platformColor);
+	 InitBody(dividingwallBody2, (Vector2) { 3000.f, -700.f }, (Vector2) { 500.0f, 500.0f }, 0.f, platformColor);
 
 
 	//Initalise Moving bodies
 	
-	InitBody(playerBox, (Vector2) { 100.f, 300.f }, (Vector2) { playerWidth, playerHeight }, 1.f, BLACK);
+	InitBody(playerBox, (Vector2) { 100.f, 300.f }, (Vector2) { playerWidth, playerHeight }, 1.f, playerColor);
 	playerBox->isPlayer = true;
 
 
 	// init puzzle bodies
-	InitBody(pushBoxBlue, (Vector2) { 850, 0 }, (Vector2) { 50.0f, 50.0f }, 1.0f, DARKBLUE);
+	InitBody(pushBoxBlue, (Vector2) { 850, 0 }, (Vector2) { 50.0f, 50.0f }, 1.0f, bluePuzzleColor);
 	pushBoxBlue->isAlive = true;
-	InitBody(plateBlueBody, (Vector2) { 960.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, DARKBLUE);
-	InitBody(doorBlueBody, (Vector2) { 1225.f, 200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, DARKBLUE);
+	InitBody(plateBlueBody, (Vector2) { 960.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, bluePuzzleColor);
+	InitBody(doorBlueBody, (Vector2) { 1225.f, 200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, bluePuzzleColor);
 
-	InitBody(pushBoxPink, (Vector2) { 5000, -5000 }, (Vector2) { 50.0f, 50.0f }, 1.0f, PINK);
+	InitBody(pushBoxPink, (Vector2) { 5000, -5000 }, (Vector2) { 50.0f, 50.0f }, 1.0f, pinkPuzzleColor);
 	pushBoxPink->isAlive = true;
-	InitBody(platePinkBody, (Vector2) { 1700.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, PINK);
-	InitBody(doorPinkBody, (Vector2) {3100.f, -200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, PINK);
+	InitBody(platePinkBody, (Vector2) { 1700.f, 400.f }, (Vector2) { 70.0f, 30.0f }, 0.f, pinkPuzzleColor);
+	InitBody(doorPinkBody, (Vector2) {3100.f, -200.f }, (Vector2) { 50.0f, 200.0f }, 0.f, pinkPuzzleColor);
 	
 
 	//init jump pad
-	InitBody(JumpPad, (Vector2) { 2200.f, 380.f }, (Vector2) { 80.0f, 20.0f }, 0.f, DARKPURPLE);
+	InitBody(JumpPad, (Vector2) { 2200.f, 380.f }, (Vector2) { 80.0f, 20.0f }, 0.f, bouncePadColor);
 
 
-	//init death bodies
-	InitBody(voidBody1, (Vector2) { 2300.f, 450.f }, (Vector2) { 1000.f, 100.f }, 0.f, RED);
-	InitBody(voidBody2, (Vector2) { 490.f, 370.f }, (Vector2) { 170.f, 30.f }, 0.f, RED);
-	InitBody(voidBody3, (Vector2) { 1750.f, -80.f }, (Vector2) { 150.f, 30.f }, 0.f, RED);
+	//init hazard bodies
+	InitBody(voidBody1, (Vector2) { 2300.f, 450.f }, (Vector2) { 1000.f, 100.f }, 0.f, hazardColor);
+	InitBody(voidBody2, (Vector2) { 490.f, 370.f }, (Vector2) { 170.f, 30.f }, 0.f, hazardColor);
+	InitBody(voidBody3, (Vector2) { 1750.f, -80.f }, (Vector2) { 150.f, 30.f }, 0.f, hazardColor);
 	
 
 	//init win body
-	InitBody(winBody, (Vector2) { 3250.f, -200.f }, (Vector2) { 50.f, 200.f }, 0.f, GOLD);
+	InitBody(winBody, (Vector2) { 3250.f, -200.f }, (Vector2) { 50.f, 200.f }, 0.f, collectibleColor);
 	
 
 
 	//intialise collectable body
-	InitBody(collectableBody, (Vector2) { 1040.0f, -300.0f }, (Vector2) { 20.0f, 20.0f }, 0.0f, GOLD);
+	InitBody(collectableBody, (Vector2) { 1040.0f, -300.0f }, (Vector2) { 20.0f, 20.0f }, 0.0f, collectibleColor);
 	
 		
 	
 
 
 }
+
+// ==================== CAMERA / RENDERING ====================
+
 Camera2D camera = { 0 };
 
 void DrawGame()
@@ -885,11 +925,11 @@ void DrawGame()
 
 	BeginMode2D(camera);
 
-	ClearBackground(BLUE);
+	ClearBackground(backgroundColor);
 
 	//bounds
-	DrawRectangle(-500, -2000, 500, 3000, DARKBROWN);
-	DrawRectangle(worldRightBound, -2000, 500, 3000, DARKBROWN);
+	DrawRectangle(-500, -2000, 500, 3000, platformColor);
+	DrawRectangle(worldRightBound, -2000, 500, 3000, platformColor);
 
 	//arrows
 	DrawTextureEx(ArrowTexture, (Vector2) { 100, 300 }, 0, 0.1, WHITE);
@@ -908,6 +948,7 @@ void DrawGame()
 	EndDrawing();
 }
 
+// ==================== MAIN ====================
 
 int main ()
 {
@@ -932,8 +973,11 @@ int main ()
 	// Initialise the game state and bodies
 	InitialiseGame();
 
+	InitAudioDevice();
+
 	
-	//camera
+	// Set Camera to follow the player with a slight offset.
+
 	camera.target = (Vector2){ 0,0 };
 	camera.offset = (Vector2){ (float)windowWidth / 2, (float)windowHeight / 2 , };
 	camera.rotation = 0.f;
@@ -944,37 +988,34 @@ int main ()
 		//Make sure the frames run at the same speed for every computer
 		float dt = GetFrameTime();
 
+
+		//Setting Sounds and Textures
 		ArrowTexture = LoadTexture("Arrow.png");
+		HazardSound = LoadSound("error.WAV");
+		JumpSound = LoadSound("jump.WAV");
+		SetSoundVolume(JumpSound, 0.1f);
+		WinSound = LoadSound("win.WAV");
+		SetSoundVolume(WinSound, 0.2f);
+		CollectableSound = LoadSound("aquire.WAV");
+		UnlockDoorSound = LoadSound("completed.WAV");
 
 		camera.target = (Vector2){ bodies[0].position.x, bodies[0].position.y - 100 };
-		
-		//DEBUGGING:
-			//printf("Texture size: %d x %d\n", ArrowTexture.width, ArrowTexture.height);
-			//printf("Working directory: %s\n", GetWorkingDirectory());
-			//printf("%f,%f\n", bodies[0].position.x, bodies[0].position.y); //int
-			//printf("%d\n", win); //bool
-			//printf("%d\n", justDied);
-			//printf("Grounded: %d | Coyote: %d\n",
-			//playerBox->isGrounded,
-		//	coyote_counter); 
 
-
-
-		 // Update the game state machine based on user input and game conditions
+		// Update gameplay state and input.
 		GameStateMachine(dt);
 
-		// 2. Apply Drag (Friction) only to the X axis. Purposly keep this out of the step physics function to show how drag is applied before physics step.
+		// Apply horizontal friction, gravity and movement to all dynamic bodies.
 		StepPhysicsForAllBodies(bodies, dt, GRAVITY);
 
 		UpdatePuzzles();
 
 		UpdateJumpPads();
 
-		// Collision resolution
+		// Detect and resolve body collisions after physics movement.
 		ResolveCollisionsForAllBodies(bodies);
 
 
-		//testing cheat keybinds
+		// Development shortcuts used to quickly test different parts of the level.
 		if (IsKeyPressed(KEY_E))
 		{
 			playerBox->position = (Vector2){ 1600, 300.f };
@@ -985,13 +1026,19 @@ int main ()
 			100.f, 300.f
 			};
 		}
-		// Drawing
+		// Render the current frame.
 		DrawGame();
 	
 
 	}
-		// destroy the window and cleanup
+	// Release loaded resources and close the window.
 		UnloadTexture(ArrowTexture);
+		UnloadSound(HazardSound);
+		UnloadSound(JumpSound);
+		UnloadSound(WinSound);
+		UnloadSound(CollectableSound);
+		UnloadSound(UnlockDoorSound);
+		CloseAudioDevice;
 		CloseWindow();
 		return 0;
 
